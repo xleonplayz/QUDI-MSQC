@@ -45,18 +45,18 @@ gui:
     module.Class: 'qudi.core.gui.main_gui.main_gui.TrayIcon'
 
   # --------------------------------
-  # Optimization GUI
+  # Optimization GUI - Use the exact file/class name
   # --------------------------------
   optimization_gui:
-    module.Class: 'qudi.gui.optimalcontrol.OptimizationGUI'
+    module.Class: 'qudi.gui.optimalcontrol.OptimizationGUI.OptimizationGUI'
     connect:
       optimization_logic: 'optimization'
 
   # --------------------------------
-  # NV Simulator GUI
+  # NV Simulator GUI - Use the exact file/class name
   # --------------------------------
   nv_simulator_gui:
-    module.Class: 'qudi.gui.optimalcontrol.NVSimulatorGUI'
+    module.Class: 'qudi.gui.optimalcontrol.NVSimulatorGUI.NVSimulatorGUI'
     connect:
       nv_simulator_logic: 'nv_simulator'
 
@@ -69,7 +69,7 @@ logic:
   # NV Simulator Logic
   # --------------------------------
   nv_simulator:
-    module.Class: 'qudi.logic.nv_simulator.NVSimulatorLogic'
+    module.Class: 'qudi.logic.nv_simulator_logic.NVSimulatorLogic'
     
     # Physical parameters
     d_gs: 2.87e9       # Zero-field splitting (Hz)
@@ -82,10 +82,10 @@ logic:
     initial_state: [1, 0, 0]  # |0⟩ state as default
 
   # --------------------------------
-  # Optimization Logic
+  # Optimization Logic - Use the exact file/class name
   # --------------------------------
   optimization:
-    module.Class: 'qudi.logic.optimalcontrol.OptimizationLogic'
+    module.Class: 'qudi.logic.optimalcontrol.OptimizationLogic.OptimizationLogic'
     connect:
       fom_logic: 'worker_fom'
       controls_logic: 'worker_controls'
