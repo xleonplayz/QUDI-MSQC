@@ -3,35 +3,37 @@ This is the logic class for the optimization
 """
 # QuOCS imports
 from quocslib.Optimizer import Optimizer
-
 from quocspyside2interface.logic.OptimizationBasic import OptimizationBasic
 
-from logic.optimalcontrol.HandleExit import HandleExitLogic
-from logic.generic_logic import GenericLogic as LogicBase
-from core.connector import Connector
-from core.util.mutex import Mutex
+# Qudi core imports
+from qudi.logic.optimalcontrol.HandleExit import HandleExitLogic
+from qudi.core.module import LogicBase
+from qudi.core.connector import Connector
+from qudi.util.mutex import Mutex
 
 import time
-
-# Qudi new core imports
-# from qudi.core.module import LogicBase
-# from core.configoption import ConfigOption
-# from qudi.core.connector import Connector
 from qtpy import QtCore
-from logic.optimalcontrol.fom_signal import FomSignal
+from qudi.logic.optimalcontrol.fom_signal import FomSignal
 
 class OptimizationLogic(LogicBase, OptimizationBasic):
+    """Logic module for optimization control"""
+    # Define a proper _threaded attribute for the Logic module
+    _threaded = True
 
     fom_logic = Connector(interface="WorkerFom")
     controls_logic = Connector(interface="WorkerControls")
-    # Signal from outside
+    # Define all signals
     load_optimization_dictionary_signal = QtCore.Signal(dict)
     send_controls_signal = QtCore.Signal(list, list, list)
     wait_fom_signal = QtCore.Signal(str)
+    is_running_signal = QtCore.Signal(bool)
+    message_label_signal = QtCore.Signal(str)
+    fom_plot_signal = QtCore.Signal(object)
+    controls_update_signal = QtCore.Signal(object)
 
 
 
-    def __init__(self, config, **kwargs):
+    def __init__(self, config=None, **kwargs):
         """Initialize the base class"""
         super().__init__(config=config, **kwargs)
 

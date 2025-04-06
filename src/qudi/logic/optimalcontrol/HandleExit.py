@@ -1,31 +1,35 @@
-# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-#  Copyright 2021-  QuOCS Team
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+"""
+HandleExit class to manage optimization status and termination.
+
+Copyright 2021-  QuOCS Team
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
 
 import logging
 
 from qtpy import QtCore
 
 from quocspyside2interface.logic.HandleExitBasic import HandleExitBasic as HE
+from qudi.core.logger import get_logger
 
 
 class HandleExitLogic(HE):
     """This class check and update the current optimization status and notify the Client Interface and the Optimization
     code about it"""
 
-    logger = logging.getLogger("oc_logger")
+    # Use Qudi logger instead of direct logging
+    logger = get_logger("optimalcontrol.HandleExit")
 
     # Signals for the others logic components
     is_optimization_running_fom_signal = QtCore.Signal(bool)

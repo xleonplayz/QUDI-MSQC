@@ -1,17 +1,20 @@
 """
-Worker controls class
-"""
+Worker controls class for OptimalControl.
 
-#from qudi.core.module import LogicBase
-from logic.generic_logic import GenericLogic
+This module handles the control inputs for the optimization process.
+"""
+from qudi.core.module import LogicBase
 from qtpy import QtCore
 
 import time
 
 
-class WorkerControls(GenericLogic):
-
-    def __init__(self, config, **kwargs):
+class WorkerControls(LogicBase):
+    """Worker logic for controls manipulation"""
+    # Define a proper _threaded attribute for the Logic module
+    _threaded = True
+    
+    def __init__(self, config=None, **kwargs):
         super().__init__(config=config, **kwargs)
         self.log.info("Worker Controls initialization")
         self.fom_max = 10**10

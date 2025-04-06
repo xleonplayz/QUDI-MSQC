@@ -1,19 +1,23 @@
-""" """
+"""
+Worker class for figure of merit (FOM) calculations in OptimalControl.
+
+This module calculates and provides the figure of merit for the optimization process.
+"""
 import time
 import logging
 
-
 from qtpy import QtCore
-#from qudi.core.module import LogicBase
-from logic.generic_logic import GenericLogic as LogicBase
+from qudi.core.module import LogicBase
 
 
 class WorkerFom(LogicBase):
-    """ """
+    """Worker logic for figure of merit calculations"""
+    # Define a proper _threaded attribute for the Logic module
+    _threaded = True
     send_fom_signal = QtCore.Signal(dict)
     test_message_signal = QtCore.Signal(str)
 
-    def __init__(self, config, **kwargs):
+    def __init__(self, config=None, **kwargs):
         """Initialize the base class"""
         super().__init__(config=config, **kwargs)
         self.fom_max = 10**10
