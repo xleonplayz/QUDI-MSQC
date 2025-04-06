@@ -1,0 +1,49 @@
+##############################################################################
+#                     Sample configuration file for NV Simulator                #
+##############################################################################
+# This file contains a sample configuration for the NV center simulator modules.
+# You can add these sections to your main Qudi configuration file.
+
+global:
+    # Define default data storage path
+    default_data_dir: ~/qudi-data
+    # Define a default "work directory"
+    # Used for saving notes, configs etc.
+    # Default to default_data_dir if omitted
+    work_dir: ~/qudi-work
+
+hardware:
+    # The NV Simulator Logic doesn't need a hardware module
+
+logic:
+    nv_simulator:
+        module.Class: 'logic.nv_simulator_logic.NVSimulatorLogic'
+        
+        # Physical parameters
+        d_gs: 2.87e9       # Zero-field splitting (Hz)
+        e_gs: 2e6          # Strain parameter (Hz)
+        gamma_e: 28e6      # Gyromagnetic ratio (Hz/mT)
+        b_field: [0, 0, 0.5] # External B field (mT) [Bx, By, Bz]
+        t1: 100e-6         # T1 relaxation time (s)
+        t2: 50e-6          # T2 relaxation time (s)
+        noise_level: 0.05  # Measurement noise level
+        initial_state: [1, 0, 0]  # |0⟩ state as default
+
+    # Optional - If you want to use the NV simulator with the optimal control module
+    optimization:
+        module.Class: 'logic.optimalcontrol.OptimizationLogic'
+        connect:
+            nv_simulator: nv_simulator
+        # Add other optimization logic configuration options as needed
+
+gui:
+    nv_simulator_gui:
+        module.Class: 'gui.optimalcontrol.NVSimulatorGUI'
+        connect:
+            nv_simulator_logic: nv_simulator
+
+    # Optional - If you want to use the optimization GUI
+    optimization_gui:
+        module.Class: 'gui.optimalcontrol.OptimizationGUI'
+        connect:
+            optimization_logic: optimization

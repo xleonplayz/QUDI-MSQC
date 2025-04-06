@@ -31,6 +31,10 @@ class OptimizationGUI(GuiBase, QMainWindow):
         super().__init__(config=config, **kwargs)
         self.setWindowTitle("QUOCS Pulse Optimization")
         
+        # Flag to prevent infinite recursion between GUI and logic
+        self._send_to_logic = True
+        self._updating_from_signal = False
+        
         # Initialize state variables
         self.optimization_params = {
             'algorithm': 'GRAPE',
@@ -582,15 +586,19 @@ class OptimizationGUI(GuiBase, QMainWindow):
             self.optimization_params = params
             
             # Emit signal for logic module if we have a logic instance
-            if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
+            # Only send to logic if explicitly requested (to avoid infinite recursion)
+            if hasattr(self, '_send_to_logic') and self._send_to_logic and hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
                 try:
                     # Direct method call instead of signal
+                    self._send_to_logic = False  # Prevent recursion
                     self.optimizationlogic.load_opti_comm_dict(self.optimization_params)
                     self.log_message(f"Updated parameters: algorithm={params['algorithm']}, iterations={params['iterations']}")
                 except Exception as e:
                     self.log_message(f"Error sending parameters update: {str(e)}")
+                finally:
+                    self._send_to_logic = True  # Re-enable sending
             else:
-                self.log_message("Parameter update complete (logic module not connected)")
+                self.log_message("Parameter update complete (not sent to logic)")
                 
             return params
             
@@ -625,6 +633,18 @@ class OptimizationGUI(GuiBase, QMainWindow):
             except Exception as e:
                 self.log_message(f"Error loading configuration: {str(e)}")
     
+    def send_params_to_logic(self):
+        """Explicitly send current parameters to the logic module."""
+        if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
+            try:
+                self.optimizationlogic.load_opti_comm_dict(self.optimization_params)
+                self.log_message(f"Sent parameters to logic: algorithm={self.optimization_params['algorithm']}")
+                return True
+            except Exception as e:
+                self.log_message(f"Error sending parameters to logic: {str(e)}")
+                return False
+        return False
+    
     def _on_start_clicked(self):
         """Handle Start button click."""
         try:
@@ -634,6 +654,8 @@ class OptimizationGUI(GuiBase, QMainWindow):
             # Update parameters
             try:
                 self._update_optimization_params()  # Make sure we have the latest settings
+                # Explicitly send parameters to logic
+                self.send_params_to_logic()
             except Exception as e:
                 self.log_message(f"Error updating parameters: {str(e)}")
                 return
@@ -837,13 +859,22 @@ class OptimizationGUI(GuiBase, QMainWindow):
         optimization_dict : dict
             Dictionary containing optimization configuration
         """
+        # Guard against recursion
+        if self._updating_from_signal:
+            return
+            
         self.log_message(f"Received optimization dictionary with {len(optimization_dict)} entries")
         
         # Update UI elements based on the received dictionary
         try:
+            self._updating_from_signal = True  # Set the flag to prevent recursion
+            self._send_to_logic = False  # Don't send changes back to logic
             self._update_ui_from_params(optimization_dict)
         except Exception as e:
             self.log_message(f"Error updating UI from dictionary: {str(e)}")
+        finally:
+            self._updating_from_signal = False  # Reset flag
+            self._send_to_logic = True  # Re-enable sending
     
     def _update_ui_from_params(self, params):
         """Update UI elements based on parameter dictionary.
