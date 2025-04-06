@@ -23,10 +23,8 @@ class OptimizationGUI(GuiBase, QMainWindow):
     # Define connectors to the Logic modules
     optimization_logic = Connector(interface="OptimizationLogic")
 
-    # Define signals - all signals should be defined OUTSIDE the constructor to avoid nullptr issues
-    # Using string signals instead of custom signals to avoid PyQt/PySide issues
-    optimization_status_update = Signal(bool)  # True=started, False=stopped
-    parameter_updated = Signal(object)  # Parameters dictionary
+    # No signals defined here to avoid Qt/PySide issues
+    # We'll use direct method calls instead
     
     def __init__(self, config=None, **kwargs):
         # Initialize the parent classes with a single super() call
@@ -494,8 +492,7 @@ class OptimizationGUI(GuiBase, QMainWindow):
         self.save_button.clicked.connect(self._on_save_clicked)
         self.load_button.clicked.connect(self._on_load_clicked)
         
-        # Connect internal state change signals
-        self.optimization_status_update.connect(self._on_optimization_status_changed)
+        # No signal connections needed - using direct method calls
         
         # Algorithm selection change
         self.algorithm_combo.currentTextChanged.connect(self.update_advanced_options)
@@ -587,7 +584,8 @@ class OptimizationGUI(GuiBase, QMainWindow):
             # Emit signal for logic module if we have a logic instance
             if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
                 try:
-                    self.parameter_updated.emit(self.optimization_params)
+                    # Direct method call instead of signal
+                    self.optimizationlogic.load_opti_comm_dict(self.optimization_params)
                     self.log_message(f"Updated parameters: algorithm={params['algorithm']}, iterations={params['iterations']}")
                 except Exception as e:
                     self.log_message(f"Error sending parameters update: {str(e)}")
@@ -647,20 +645,20 @@ class OptimizationGUI(GuiBase, QMainWindow):
                 self.log_message(f"Error initializing plots: {str(e)}")
                 # Continue anyway as this is non-critical
             
-            # Signal optimization start (updates UI)
-            self.optimization_status_update.emit(True)
+            # Directly update UI state
+            self._on_optimization_status_changed(True)
             
             # Start the optimization in the logic module
             if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
                 self.optimizationlogic.start_optimization(self.optimization_params)
             else:
                 self.log_message("Error: Optimization logic not available")
-                self.optimization_status_update.emit(False)
+                self._on_optimization_status_changed(False)
                 
         except Exception as e:
             self.log_message(f"Error starting optimization: {str(e)}")
             # Make sure UI is reset
-            self.optimization_status_update.emit(False)
+            self._on_optimization_status_changed(False)
     
     def _initialize_plots(self):
         """Initialize the visualization plots with empty data."""
@@ -687,8 +685,8 @@ class OptimizationGUI(GuiBase, QMainWindow):
     def _on_stop_clicked(self):
         """Handle Stop button click."""
         self.log_message("Stopping optimization process...")
-        # Update UI
-        self.optimization_status_update.emit(False)
+        # Update UI directly
+        self._on_optimization_status_changed(False)
         
         # If connected to logic, tell it to stop as well
         if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
@@ -988,29 +986,24 @@ class OptimizationGUI(GuiBase, QMainWindow):
                 self.log_message(f"Could not connect message signal: {str(e)}")
                 
             try:
+                # Custom connection for running status
                 if hasattr(self.optimizationlogic, 'is_running_signal'):
                     self.optimizationlogic.is_running_signal.connect(
-                        self.optimization_status_update.emit
+                        self._on_optimization_status_changed  # Direct method connection
                     )
             except Exception as e:
                 self.log_message(f"Could not connect running signal: {str(e)}")
                 
             try:
+                # Custom connection for status updates
                 if hasattr(self.optimizationlogic, 'optimization_status_signal'):
                     self.optimizationlogic.optimization_status_signal.connect(
-                        self.update_optimization_status
+                        self.update_optimization_status  # Direct method connection
                     )
             except Exception as e:
                 self.log_message(f"Could not connect status signal: {str(e)}")
             
-            # Connect our signals to the logic - careful with potentially problematic signals
-            try:
-                if hasattr(self.optimizationlogic, 'load_opti_comm_dict'):
-                    self.parameter_updated.connect(
-                        self.optimizationlogic.load_opti_comm_dict
-                    )
-            except Exception as e:
-                self.log_message(f"Could not connect parameter signal: {str(e)}")
+            # No need to connect our signals to logic - we'll use direct method calls
             
             self.log_message("Successfully connected to optimization logic")
         except Exception as e:
