@@ -10,15 +10,25 @@ global:
     # Define a default "work directory"
     work_dir: ~/qudi-work
     # Default log level, can be {'debug', 'info', 'warning', 'error', 'critical'}
-    log_level: info
+    log_level: debug
 
-hardware:
-    # No hardware modules needed for simulation mode
+gui:
+    # NV Simulator GUI
+    nv_simulator_gui:
+        module.Class: 'qudi.gui.optimalcontrol.NVSimulatorGUI'
+        connect:
+            nv_simulator_logic: nv_simulator
+
+    # Optimization GUI
+    optimization_gui:
+        module.Class: 'qudi.gui.optimalcontrol.OptimizationGUI'
+        connect:
+            optimization_logic: optimization
 
 logic:
     # NV Simulator Logic
     nv_simulator:
-        module.Class: 'nv_simulator_logic.NVSimulatorLogic'
+        module.Class: 'qudi.logic.nv_simulator_logic.NVSimulatorLogic'
         
         # Physical parameters
         d_gs: 2.87e9       # Zero-field splitting (Hz)
@@ -32,33 +42,14 @@ logic:
 
     # Worker modules for Optimization Logic
     worker_fom:
-        module.Class: 'optimalcontrol.worker_fom.WorkerFom'
+        module.Class: 'qudi.logic.optimalcontrol.worker_fom.WorkerFom'
     
     worker_controls:
-        module.Class: 'optimalcontrol.worker_controls.WorkerControls'
+        module.Class: 'qudi.logic.optimalcontrol.worker_controls.WorkerControls'
     
     # Optimization Logic
     optimization:
-        module.Class: 'optimalcontrol.OptimizationLogic'
+        module.Class: 'qudi.logic.optimalcontrol.OptimizationLogic'
         connect:
             fom_logic: worker_fom
             controls_logic: worker_controls
-
-gui:
-    # NV Simulator GUI
-    nv_simulator_gui:
-        module.Class: 'optimalcontrol.NVSimulatorGUI'
-        connect:
-            nv_simulator_logic: nv_simulator
-
-    # Optimization GUI
-    optimization_gui:
-        module.Class: 'optimalcontrol.OptimizationGUI'
-        connect:
-            optimization_logic: optimization
-            
-    # Add the main GUI to have a proper Qudi Manager window
-    manager_gui:
-        module.Class: 'manager.managergui.ManagerGui'
-        connect:
-            trace_analysis_logic: trac

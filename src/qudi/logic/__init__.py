@@ -2,6 +2,7 @@
 Logic modules for the qudi framework.
 """
 
-from .nv_simulator_logic import NVSimulatorLogic
+# Don't import all modules directly, let Qudi handle the imports
+# This avoids circular imports and startup issues
 
-__all__ = ['NVSimulatorLogic']
+__all__ = []

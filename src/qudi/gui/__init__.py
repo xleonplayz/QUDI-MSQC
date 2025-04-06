@@ -2,6 +2,7 @@
 GUI modules for the qudi framework.
 """
 
-from .optimalcontrol import OptimizationGUI, NVSimulatorGUI
+# Don't import all modules directly, let Qudi handle the imports
+# This avoids circular imports and startup issues
 
-__all__ = ['OptimizationGUI', 'NVSimulatorGUI']
+__all__ = []
