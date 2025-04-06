@@ -195,6 +195,8 @@ class OptimizationGUI(GuiBase, QMainWindow):
 
     def show(self):
         """Show the GUI window and bring it to the front."""
-        super().show()
+        # Don't call super().show() as this would call GuiBase.show() which raises NotImplementedError
+        # Instead, call directly QMainWindow.show()
+        QMainWindow.show(self)
         self.activateWindow()
         self.raise_()
