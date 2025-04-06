@@ -1,0 +1,101 @@
+# =============================================================================
+# Fixed Qudi configuration file for Optimal Control and NV Simulator modules
+# =============================================================================
+
+global:
+  # Modules to load at startup
+  startup_modules: 
+    - tray            # System Tray-Icon
+    - man             # Manager GUI
+    - optimization_gui  # Optimization GUI
+    - nv_simulator_gui  # NV Simulator GUI
+
+  # Server configuration
+  remote_modules_server:
+    address: 'localhost'
+    port: 12346
+
+  # Namespace server port for Jupyter kernel
+  namespace_server_port: 18862
+
+  # Serialization setting for remote calls
+  force_remote_calls_by_value: True
+
+  # UI stylesheet
+  stylesheet: 'qdark.qss'
+
+  # Data directory options
+  daily_data_dirs: True
+
+
+# =============================================================================
+# GUI Section
+# =============================================================================
+gui:
+  # --------------------------------
+  # Manager GUI
+  # --------------------------------
+  man:
+    module.Class: 'qudi.core.gui.main_gui.main_gui.MainGui'
+
+  # --------------------------------
+  # System Tray-Icon
+  # --------------------------------
+  tray:
+    module.Class: 'qudi.core.gui.main_gui.main_gui.TrayIcon'
+
+  # --------------------------------
+  # Optimization GUI
+  # --------------------------------
+  optimization_gui:
+    module.Class: 'qudi.gui.optimalcontrol.OptimizationGUI'
+    connect:
+      optimization_logic: 'optimization'
+
+  # --------------------------------
+  # NV Simulator GUI
+  # --------------------------------
+  nv_simulator_gui:
+    module.Class: 'qudi.gui.optimalcontrol.NVSimulatorGUI'
+    connect:
+      nv_simulator_logic: 'nv_simulator'
+
+
+# =============================================================================
+# LOGIC Section
+# =============================================================================
+logic:
+  # --------------------------------
+  # NV Simulator Logic
+  # --------------------------------
+  nv_simulator:
+    module.Class: 'qudi.logic.nv_simulator.NVSimulatorLogic'
+    
+    # Physical parameters
+    d_gs: 2.87e9       # Zero-field splitting (Hz)
+    e_gs: 2e6          # Strain parameter (Hz)
+    gamma_e: 28e6      # Gyromagnetic ratio (Hz/mT)
+    b_field: [0, 0, 0.5] # External B field (mT) [Bx, By, Bz]
+    t1: 100e-6         # T1 relaxation time (s)
+    t2: 50e-6          # T2 relaxation time (s)
+    noise_level: 0.05  # Measurement noise level
+    initial_state: [1, 0, 0]  # |0⟩ state as default
+
+  # --------------------------------
+  # Optimization Logic
+  # --------------------------------
+  optimization:
+    module.Class: 'qudi.logic.optimalcontrol.OptimizationLogic'
+    connect:
+      fom_logic: 'worker_fom'
+      controls_logic: 'worker_controls'
+
+  worker_fom:
+    module.Class: 'qudi.logic.optimalcontrol.worker_fom.WorkerFom'
+    options:
+      max_time: 30.0
+
+  worker_controls:
+    module.Class: 'qudi.logic.optimalcontrol.worker_controls.WorkerControls'
+    options:
+      max_time: 30.0
