@@ -506,6 +506,8 @@ class OptimizationGUI(GuiBase, QMainWindow):
         
         # Connect all parameter changes to the update function
         self._connect_parameter_signals()
+        
+        # Note: Additional connections to logic module are made in on_activate()
     
     def _connect_parameter_signals(self):
         """Connect all parameter input widgets to the parameter update function."""
@@ -534,51 +536,67 @@ class OptimizationGUI(GuiBase, QMainWindow):
     
     def _update_optimization_params(self):
         """Update the optimization parameters based on UI inputs."""
-        self.optimization_params = {
-            'algorithm': self.algorithm_combo.currentText(),
-            'iterations': self.iterations_spin.value(),
-            'pulse_count': self.pulse_count_spin.value(),
-            'sample_count': self.sample_count_spin.value(),
-            'convergence_threshold': self.conv_threshold_spin.value(),
-            'target_fidelity': self.target_fidelity_spin.value(),
-            'max_amplitude': self.max_amp_spin.value(),
-            'min_amplitude': self.min_amp_spin.value(),
-            'pulse_duration': self.pulse_duration_spin.value(),
-            'smooth_penalty': self.smooth_penalty_spin.value(),
-            'apply_smoothing': self.apply_smoothing.isChecked(),
-            'apply_rise_time': self.apply_rise_time.isChecked(),
-            'rise_time': self.rise_time_spin.value(),
-            'zero_boundaries': self.zero_boundaries.isChecked(),
-            'apply_spectral_constraints': self.spectral_constraints.isChecked(),
-            'min_frequency': self.min_freq_spin.value(),
-            'max_frequency': self.max_freq_spin.value()
-        }
-        
-        # Add algorithm-specific parameters
-        if self.optimization_params['algorithm'] == 'GRAPE':
-            self.optimization_params.update({
-                'learning_rate': self.grape_learning_rate.value(),
-                'momentum': self.grape_momentum.value()
-            })
-        elif self.optimization_params['algorithm'] in ['CRAB', 'dCRAB']:
-            self.optimization_params.update({
-                'basis': self.crab_basis_combo.currentText(),
-                'basis_terms': self.crab_terms_spin.value()
-            })
+        try:
+            # Build parameter dictionary from UI elements
+            params = {
+                'algorithm': self.algorithm_combo.currentText(),
+                'iterations': self.iterations_spin.value(),
+                'pulse_count': self.pulse_count_spin.value(),
+                'sample_count': self.sample_count_spin.value(),
+                'convergence_threshold': self.conv_threshold_spin.value(),
+                'target_fidelity': self.target_fidelity_spin.value(),
+                'max_amplitude': self.max_amp_spin.value(),
+                'min_amplitude': self.min_amp_spin.value(),
+                'pulse_duration': self.pulse_duration_spin.value(),
+                'smooth_penalty': self.smooth_penalty_spin.value(),
+                'apply_smoothing': self.apply_smoothing.isChecked(),
+                'apply_rise_time': self.apply_rise_time.isChecked(),
+                'rise_time': self.rise_time_spin.value(),
+                'zero_boundaries': self.zero_boundaries.isChecked(),
+                'apply_spectral_constraints': self.spectral_constraints.isChecked(),
+                'min_frequency': self.min_freq_spin.value(),
+                'max_frequency': self.max_freq_spin.value()
+            }
             
-            if self.optimization_params['algorithm'] == 'dCRAB':
-                self.optimization_params.update({
-                    'update_frequency': self.dcrab_update_freq.value()
+            # Add algorithm-specific parameters
+            algorithm = params['algorithm']
+            
+            if algorithm == 'GRAPE' and hasattr(self, 'grape_learning_rate'):
+                params.update({
+                    'learning_rate': self.grape_learning_rate.value(),
+                    'momentum': self.grape_momentum.value()
                 })
-        elif self.optimization_params['algorithm'] == 'GROUP':
-            self.optimization_params.update({
-                'use_krotov': self.group_krotov_checkbox.isChecked(),
-                'update_steps': self.group_update_spin.value()
-            })
-        
-        # Emit signal for logic module
-        self.optimization_params_changed_signal.emit(self.optimization_params)
-        self.log_message(f"Updated optimization parameters: algorithm={self.optimization_params['algorithm']}, iterations={self.optimization_params['iterations']}")
+            elif algorithm in ['CRAB', 'dCRAB'] and hasattr(self, 'crab_basis_combo'):
+                params.update({
+                    'basis': self.crab_basis_combo.currentText(),
+                    'basis_terms': self.crab_terms_spin.value()
+                })
+                
+                if algorithm == 'dCRAB' and hasattr(self, 'dcrab_update_freq'):
+                    params.update({
+                        'update_frequency': self.dcrab_update_freq.value()
+                    })
+            elif algorithm == 'GROUP' and hasattr(self, 'group_krotov_checkbox'):
+                params.update({
+                    'use_krotov': self.group_krotov_checkbox.isChecked(),
+                    'update_steps': self.group_update_spin.value()
+                })
+            
+            # Update internal parameters
+            self.optimization_params = params
+            
+            # Emit signal for logic module if we have a logic instance
+            if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
+                self.optimization_params_changed_signal.emit(self.optimization_params)
+                self.log_message(f"Updated parameters: algorithm={params['algorithm']}, iterations={params['iterations']}")
+            else:
+                self.log_message("Parameter update complete (logic module not connected)")
+                
+            return params
+            
+        except Exception as e:
+            self.log_message(f"Error updating parameters: {str(e)}")
+            raise
     
     def _on_save_clicked(self):
         """Handle Save button click to save optimization configuration."""
@@ -610,18 +628,36 @@ class OptimizationGUI(GuiBase, QMainWindow):
     def _on_start_clicked(self):
         """Handle Start button click."""
         try:
+            # First update UI state
             self.log_message(f"Starting {self.algorithm_combo.currentText()} optimization with {self.iterations_spin.value()} iterations...")
-            self._update_optimization_params()  # Make sure we have the latest settings
             
+            # Update parameters
+            try:
+                self._update_optimization_params()  # Make sure we have the latest settings
+            except Exception as e:
+                self.log_message(f"Error updating parameters: {str(e)}")
+                return
+                
             # Update plots with initial values
-            self._initialize_plots()
+            try:
+                self._initialize_plots()
+            except Exception as e:
+                self.log_message(f"Error initializing plots: {str(e)}")
+                # Continue anyway as this is non-critical
             
+            # Signal optimization start (updates UI)
             self.optimization_started_signal.emit()
             
             # Start the optimization in the logic module
-            self.optimizationlogic.start_optimization(self.optimization_params)
+            if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
+                self.optimizationlogic.start_optimization(self.optimization_params)
+            else:
+                self.log_message("Error: Optimization logic not available")
+                self.optimization_stopped_signal.emit()
+                
         except Exception as e:
             self.log_message(f"Error starting optimization: {str(e)}")
+            # Make sure UI is reset
             self.optimization_stopped_signal.emit()
     
     def _initialize_plots(self):
@@ -910,17 +946,12 @@ class OptimizationGUI(GuiBase, QMainWindow):
             # Connect more signals if available
             if hasattr(self.optimizationlogic, 'controls_update_signal'):
                 self.optimizationlogic.controls_update_signal.connect(
-                    lambda data: self.update_pulse_plot(
-                        data.get('pulses', []), data.get('timegrids', [])
-                    )
+                    self._handle_controls_update
                 )
                 
             if hasattr(self.optimizationlogic, 'fom_plot_signal'):
                 self.optimizationlogic.fom_plot_signal.connect(
-                    lambda data: self.update_convergence_plot(
-                        list(range(len(data.get('fom_history', []))+1)), 
-                        [data.get('initial_fom', 0)] + data.get('fom_history', [])
-                    )
+                    self._handle_fom_update
                 )
                 
             if hasattr(self.optimizationlogic, 'message_label_signal'):
@@ -930,8 +961,7 @@ class OptimizationGUI(GuiBase, QMainWindow):
                 
             if hasattr(self.optimizationlogic, 'is_running_signal'):
                 self.optimizationlogic.is_running_signal.connect(
-                    lambda running: self.optimization_started_signal.emit() if running 
-                    else self.optimization_stopped_signal.emit()
+                    self._handle_running_state_change
                 )
                 
             if hasattr(self.optimizationlogic, 'optimization_status_signal'):
@@ -944,20 +974,9 @@ class OptimizationGUI(GuiBase, QMainWindow):
                 self.optimizationlogic.load_opti_comm_dict
             )
             
-            # Connect the stop button to the logic's stop method
-            self.stop_button.clicked.disconnect(self._on_stop_clicked)
-            self.stop_button.clicked.connect(self.optimizationlogic.stop_optimization)
-            
-            # Connect load/save configuration buttons to logic methods
-            self.save_button.clicked.disconnect(self._on_save_clicked)
-            self.save_button.clicked.connect(
-                lambda: self._on_save_clicked_with_logic()
-            )
-            
-            self.load_button.clicked.disconnect(self._on_load_clicked)
-            self.load_button.clicked.connect(
-                lambda: self._on_load_clicked_with_logic()
-            )
+            # Use our own stop method which then calls logic's stop method
+            # Do not disconnect the old one since it handles UI updates
+            self.stop_button.clicked.connect(self._on_stop_with_logic)
             
             self.log_message("Successfully connected to optimization logic")
         except Exception as e:
@@ -967,28 +986,93 @@ class OptimizationGUI(GuiBase, QMainWindow):
         self.handle_ui_elements()
         return 0
         
+    def _handle_controls_update(self, data):
+        """Safely handle controls update signal
+        
+        Parameters
+        ----------
+        data : dict
+            Data containing pulse information
+        """
+        try:
+            pulses = data.get('pulses', [])
+            timegrids = data.get('timegrids', [])
+            self.update_pulse_plot(pulses, timegrids)
+        except Exception as e:
+            self.log_message(f"Error updating pulse plot: {str(e)}")
+            
+    def _handle_fom_update(self, data):
+        """Safely handle FoM update signal
+        
+        Parameters
+        ----------
+        data : dict
+            Data containing FoM information
+        """
+        try:
+            fom_history = data.get('fom_history', [])
+            initial_fom = data.get('initial_fom', 0)
+            
+            if fom_history:
+                iterations = list(range(len(fom_history) + 1))
+                values = [initial_fom] + fom_history
+                self.update_convergence_plot(iterations, values)
+        except Exception as e:
+            self.log_message(f"Error updating convergence plot: {str(e)}")
+            
+    def _handle_running_state_change(self, is_running):
+        """Safely handle running state change
+        
+        Parameters
+        ----------
+        is_running : bool
+            Whether optimization is running
+        """
+        try:
+            if is_running:
+                self.optimization_started_signal.emit()
+            else:
+                self.optimization_stopped_signal.emit()
+        except Exception as e:
+            self.log_message(f"Error handling state change: {str(e)}")
+            
+    def _on_stop_with_logic(self):
+        """Handle stop button with logic connection"""
+        try:
+            self._on_stop_clicked()  # Call our UI update method
+            self.optimizationlogic.stop_optimization()  # Call logic's stop method
+        except Exception as e:
+            self.log_message(f"Error stopping optimization: {str(e)}")
+    
     def _on_save_clicked_with_logic(self):
         """Handle Save button click using the logic's save method."""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Optimization Configuration", "", "JSON Files (*.json);;YAML Files (*.yaml *.yml);;All Files (*)"
-        )
-        if file_path:
-            try:
-                self.optimizationlogic.save_configuration(file_path, self.optimization_params)
-            except Exception as e:
-                self.log_message(f"Error saving configuration: {str(e)}")
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Save Optimization Configuration", "", "JSON Files (*.json);;YAML Files (*.yaml *.yml);;All Files (*)"
+            )
+            if file_path:
+                try:
+                    self._update_optimization_params()  # Make sure params are up to date
+                    self.optimizationlogic.save_configuration(file_path, self.optimization_params)
+                except Exception as e:
+                    self.log_message(f"Error saving configuration: {str(e)}")
+        except Exception as e:
+            self.log_message(f"Error in save dialog: {str(e)}")
                 
     def _on_load_clicked_with_logic(self):
         """Handle Load button click using the logic's load method."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Load Optimization Configuration", "", "JSON Files (*.json);;YAML Files (*.yaml *.yml);;All Files (*)"
-        )
-        if file_path:
-            try:
-                params = self.optimizationlogic.load_configuration(file_path)
-                self._update_ui_from_params(params)
-            except Exception as e:
-                self.log_message(f"Error loading configuration: {str(e)}")
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "Load Optimization Configuration", "", "JSON Files (*.json);;YAML Files (*.yaml *.yml);;All Files (*)"
+            )
+            if file_path:
+                try:
+                    params = self.optimizationlogic.load_configuration(file_path)
+                    self._update_ui_from_params(params)
+                except Exception as e:
+                    self.log_message(f"Error loading configuration: {str(e)}")
+        except Exception as e:
+            self.log_message(f"Error in load dialog: {str(e)}")
 
     def on_deactivate(self):
         """Module deactivation in Qudi."""
