@@ -36,6 +36,10 @@ class OptimizationLogic(LogicBase):
     fom_logic = Connector(interface="WorkerFom")
     controls_logic = Connector(interface="WorkerControls")
     
+    # Optional connectors for dummy hardware from qudi-iqo-modules
+    pulser_dummy = Connector(interface='PulserInterface', optional=True)
+    optimizer_dummy = Connector(interface='OptimizerInterface', optional=True)
+    
     # Define all signals
     load_optimization_dictionary_signal = Signal(dict)
     send_controls_signal = Signal(list, list, list)
@@ -45,6 +49,11 @@ class OptimizationLogic(LogicBase):
     fom_plot_signal = Signal(object)
     controls_update_signal = Signal(object)
     optimization_status_signal = Signal(dict)
+    
+    # Additional signals for compatibility with qudi-iqo-modules dummy hardware
+    pulser_on_signal = Signal(bool)  # For controlling dummy pulser hardware
+    get_samples_signal = Signal(list, list)  # For getting samples from dummy hardware
+    sigPulseOptimizationComplete = Signal(object)  # For pulse optimization completion notification
 
     def __init__(self, config=None, **kwargs):
         """Initialize the base class"""
@@ -92,6 +101,27 @@ class OptimizationLogic(LogicBase):
         self.fom_logic().send_fom_signal.connect(self.update_FoM)
         self.wait_fom_signal.connect(self.fom_logic().wait_for_fom)
         
+        # Connect to dummy hardware modules if available
+        self._use_dummy_hardware = False
+        try:
+            if self.pulser_dummy.is_connected and self.optimizer_dummy.is_connected:
+                self.pulser = self.pulser_dummy()
+                self.optimizer = self.optimizer_dummy()
+                
+                # Connect signals to dummy hardware
+                if hasattr(self.pulser, 'sigPulserRunningChanged'):
+                    self.pulser_on_signal.connect(self.pulser.sigPulserRunningChanged)
+                    
+                if hasattr(self.optimizer, 'sigPulseOptimizationComplete'):
+                    self.sigPulseOptimizationComplete.connect(self.optimizer.sigPulseOptimizationComplete)
+                
+                self.log.info("Connected to dummy pulser and optimizer from qudi-iqo-modules")
+                self._use_dummy_hardware = True
+            elif self.pulser_dummy.is_connected or self.optimizer_dummy.is_connected:
+                self.log.warning("Only one of pulser_dummy or optimizer_dummy is connected. Need both for dummy mode.")
+        except Exception as e:
+            self.log.warning(f"Error connecting to dummy hardware: {str(e)}")
+        
         # Load default configuration if provided
         if self.quocs_default_config:
             try:
@@ -108,7 +138,10 @@ class OptimizationLogic(LogicBase):
                 self.log.error(f"Error loading default QUOCS configuration: {str(e)}")
         
         # Notify that we're ready
-        self.message_label_signal.emit("Optimization logic activated and ready")
+        if self._use_dummy_hardware:
+            self.message_label_signal.emit("Optimization logic activated with dummy hardware")
+        else:
+            self.message_label_signal.emit("Optimization logic activated and ready")
 
     def update_FoM(self, fom_dict):
         """ Update the figure of merit from the fom logic """
@@ -247,7 +280,7 @@ class OptimizationLogic(LogicBase):
             return {}
 
     def start_optimization(self, opti_comm_dict=None):
-        """Start the QUOCS optimization process
+        """Start the QUOCS optimization process or use dummy hardware
         
         Parameters
         ----------
@@ -258,15 +291,13 @@ class OptimizationLogic(LogicBase):
             self.log.warning("An optimization is already running")
             return
             
-        # Check if QUOCS is available
-        if not self.quocs_available:
-            self.message_label_signal.emit("ERROR: QUOCS is not available. Install with 'pip install quocs'")
-            self.log.error("Cannot start optimization, QUOCS is not available")
-            return
+        # Update parameters if provided
+        if opti_comm_dict is not None:
+            self.load_opti_comm_dict(opti_comm_dict)
             
+        # Set running status
         self._running = True
         self.is_running_signal.emit(True)
-        self.message_label_signal.emit("Initializing QUOCS optimization process")
         
         # Reset optimization state
         self.fom_history = []
@@ -276,9 +307,29 @@ class OptimizationLogic(LogicBase):
         self.best_pulses = None
         self.best_iteration = 0
         
-        # Update parameters if provided
-        if opti_comm_dict is not None:
-            self.load_opti_comm_dict(opti_comm_dict)
+        # Run using dummy hardware if available
+        if self._use_dummy_hardware:
+            self.message_label_signal.emit("Starting optimization with dummy hardware")
+            try:
+                # Use dummy hardware for optimization
+                self._run_dummy_optimization()
+            except Exception as e:
+                self.log.error(f"Error during dummy optimization: {str(e)}")
+                self.message_label_signal.emit(f"Error: {str(e)}")
+                self._running = False
+                self.is_running_signal.emit(False)
+            return
+        
+        # Check if QUOCS is available for direct implementation
+        if not self.quocs_available:
+            self.message_label_signal.emit("ERROR: QUOCS is not available. Install with 'pip install quocs'")
+            self.log.error("Cannot start optimization, QUOCS is not available")
+            self._running = False
+            self.is_running_signal.emit(False)
+            return
+            
+        # QUOCS implementation
+        self.message_label_signal.emit("Initializing QUOCS optimization process")
         
         try:
             # Initialize QUOCS optimization
@@ -290,6 +341,136 @@ class OptimizationLogic(LogicBase):
         except Exception as e:
             self.log.error(f"Error during optimization: {str(e)}")
             self.message_label_signal.emit(f"Error: {str(e)}")
+            self._running = False
+            self.is_running_signal.emit(False)
+            
+    def _run_dummy_optimization(self):
+        """Run optimization using dummy hardware from qudi-iqo-modules"""
+        self.log.info("Starting optimization with dummy hardware")
+        
+        try:
+            # Extract parameters from opti_comm_dict
+            algorithm_name = self.opti_comm_dict.get('algorithm', 'GRAPE')
+            max_iterations = self.opti_comm_dict.get('iterations', 100)
+            pulse_count = self.opti_comm_dict.get('pulse_count', 1)
+            sample_count = self.opti_comm_dict.get('sample_count', 100)
+            pulse_duration = self.opti_comm_dict.get('pulse_duration', 1.0)
+            
+            # Check if dummy hardware supports these parameters
+            if hasattr(self.optimizer, 'set_optimization_parameters'):
+                # Prepare parameters in a format suitable for the dummy
+                dummy_params = {
+                    'algorithm': algorithm_name,
+                    'max_iterations': max_iterations,
+                    'control_count': pulse_count,
+                    'sample_points': sample_count,
+                    'duration': pulse_duration,
+                    'constraints': {
+                        'min_amplitude': self.opti_comm_dict.get('min_amplitude', -1.0),
+                        'max_amplitude': self.opti_comm_dict.get('max_amplitude', 1.0),
+                        'zero_boundaries': self.opti_comm_dict.get('zero_boundaries', True),
+                    }
+                }
+                
+                # Pass parameters to optimizer
+                self.optimizer.set_optimization_parameters(dummy_params)
+            
+            # Turn on the dummy pulser
+            if hasattr(self.pulser, 'pulser_on'):
+                self.pulser_on_signal.emit(True)
+                self.log.debug("Dummy pulser turned on")
+            
+            # Start optimization in dummy optimizer
+            if hasattr(self.optimizer, 'start_optimization'):
+                self.optimizer.start_optimization()
+                self.log.info("Dummy optimization started")
+                self.message_label_signal.emit(f"Started {algorithm_name} optimization with dummy hardware")
+                
+                # Set up a timer to simulate optimization progress
+                # In a real implementation, the dummy hardware would emit signals
+                # that we would connect to in order to track progress
+                iteration = 0
+                max_iter = max_iterations
+                
+                # Simulate optimization process with dummy hardware
+                while self._running and iteration < max_iter:
+                    iteration += 1
+                    self.current_iteration = iteration
+                    
+                    # Simulate a random FoM that improves over time
+                    current_fom = 0.5 * ((max_iter - iteration) / max_iter) + 0.01 * np.random.random()
+                    self.fom_history.append(current_fom)
+                    
+                    if self.best_fom is None or current_fom < self.best_fom:
+                        self.best_fom = current_fom
+                        self.best_iteration = iteration
+                    
+                    # Update status
+                    self.optimization_status_signal.emit({
+                        'status': f"Running dummy iteration {iteration}/{max_iter}",
+                        'message': f"Iteration {iteration}/{max_iter}: FoM = {current_fom:.6f}",
+                        'iterations': list(range(len(self.fom_history) + 1)),
+                        'fom_values': [0.5] + self.fom_history
+                    })
+                    
+                    # Generate random pulse shapes for visualization
+                    pulses = []
+                    timegrids = []
+                    for i in range(pulse_count):
+                        t = np.linspace(0, pulse_duration, sample_count)
+                        # Create a pulse that evolves over iterations
+                        freq = 2 + iteration % 5  # Changing frequency
+                        progress = iteration / max_iter
+                        pulse = np.sin(2 * np.pi * freq * t / pulse_duration) * progress
+                        pulses.append(pulse.tolist())
+                        timegrids.append(t.tolist())
+                    
+                    # Update visualization
+                    self.controls_update_signal.emit({
+                        'pulses': pulses,
+                        'timegrids': timegrids,
+                        'iteration': iteration
+                    })
+                    
+                    # Update FoM plot
+                    self.fom_plot_signal.emit({
+                        'fom': current_fom,
+                        'fom_history': self.fom_history,
+                        'initial_fom': 0.5,
+                        'best_fom': self.best_fom,
+                        'best_iteration': self.best_iteration
+                    })
+                    
+                    # Delay for visualization
+                    time.sleep(0.2)
+                
+                # Optimization complete or stopped
+                if self._running:
+                    # Normal completion
+                    self.message_label_signal.emit(f"Dummy optimization completed after {iteration} iterations")
+                    
+                    # Emit optimization completion signal for dummy hardware
+                    result = {
+                        'pulses': pulses,
+                        'fom': self.best_fom,
+                        'iterations': iteration
+                    }
+                    self.sigPulseOptimizationComplete.emit(result)
+                    
+                else:
+                    # User stopped
+                    self.message_label_signal.emit(f"Dummy optimization stopped by user after {iteration} iterations")
+                
+                # Turn off pulser
+                if hasattr(self.pulser, 'pulser_off'):
+                    self.pulser_on_signal.emit(False)
+                    self.log.debug("Dummy pulser turned off")
+                
+        except Exception as e:
+            self.log.error(f"Error during dummy optimization: {str(e)}")
+            self.message_label_signal.emit(f"Error in dummy optimization: {str(e)}")
+            
+        finally:
             self._running = False
             self.is_running_signal.emit(False)
 
@@ -447,12 +628,27 @@ class OptimizationLogic(LogicBase):
             self.is_running_signal.emit(False)
 
     def stop_optimization(self):
-        """Stop the current optimization process"""
+        """Stop the current optimization process, whether QUOCS or dummy hardware"""
         if self._running:
             self._running = False
             self.is_running_signal.emit(False)
             self.message_label_signal.emit("Optimization stopped by user")
             self.log.info("Optimization process stopped by user")
+            
+            # If using dummy hardware, stop the dummy pulser
+            if self._use_dummy_hardware:
+                try:
+                    # Turn off pulser if it has the method
+                    if hasattr(self.pulser, 'pulser_off'):
+                        self.pulser_on_signal.emit(False)
+                        self.log.debug("Dummy pulser turned off")
+                        
+                    # Stop the optimizer if it has the method
+                    if hasattr(self.optimizer, 'stop_optimization'):
+                        self.optimizer.stop_optimization()
+                        self.log.debug("Dummy optimizer stopped")
+                except Exception as e:
+                    self.log.error(f"Error stopping dummy hardware: {str(e)}")
 
     def send_controls(self, pulses_list, parameters_list, timegrids_list):
         """ Send the controls to the worker controls """
@@ -464,5 +660,17 @@ class OptimizationLogic(LogicBase):
         # Stop any running optimization
         if self._running:
             self.stop_optimization()
+            
+        # Clean up hardware connections if needed
+        if self._use_dummy_hardware:
+            try:
+                # Make sure pulser is off
+                if hasattr(self.pulser, 'pulser_off'):
+                    self.pulser_on_signal.emit(False)
+                    
+                # Clean up any other hardware resources
+                self.log.info("Disconnecting from dummy hardware")
+            except Exception as e:
+                self.log.warning(f"Error during dummy hardware cleanup: {str(e)}")
         
         self.log.info("Closing the Optimization logic")
