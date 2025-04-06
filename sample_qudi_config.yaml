@@ -1,0 +1,64 @@
+##############################################################################
+#                   Sample Qudi Configuration File                            #
+##############################################################################
+# This is a complete configuration file for using both the NV simulator and 
+# optimization modules in Qudi. Copy and paste this into your Qudi config.
+
+global:
+    # Define default data storage path
+    default_data_dir: ~/qudi-data
+    # Define a default "work directory"
+    work_dir: ~/qudi-work
+    # Default log level, can be {'debug', 'info', 'warning', 'error', 'critical'}
+    log_level: info
+
+hardware:
+    # No hardware modules needed for simulation mode
+
+logic:
+    # NV Simulator Logic
+    nv_simulator:
+        module.Class: 'nv_simulator_logic.NVSimulatorLogic'
+        
+        # Physical parameters
+        d_gs: 2.87e9       # Zero-field splitting (Hz)
+        e_gs: 2e6          # Strain parameter (Hz)
+        gamma_e: 28e6      # Gyromagnetic ratio (Hz/mT)
+        b_field: [0, 0, 0.5] # External B field (mT) [Bx, By, Bz]
+        t1: 100e-6         # T1 relaxation time (s)
+        t2: 50e-6          # T2 relaxation time (s)
+        noise_level: 0.05  # Measurement noise level
+        initial_state: [1, 0, 0]  # |0⟩ state as default
+
+    # Worker modules for Optimization Logic
+    worker_fom:
+        module.Class: 'optimalcontrol.worker_fom.WorkerFom'
+    
+    worker_controls:
+        module.Class: 'optimalcontrol.worker_controls.WorkerControls'
+    
+    # Optimization Logic
+    optimization:
+        module.Class: 'optimalcontrol.OptimizationLogic'
+        connect:
+            fom_logic: worker_fom
+            controls_logic: worker_controls
+
+gui:
+    # NV Simulator GUI
+    nv_simulator_gui:
+        module.Class: 'optimalcontrol.NVSimulatorGUI'
+        connect:
+            nv_simulator_logic: nv_simulator
+
+    # Optimization GUI
+    optimization_gui:
+        module.Class: 'optimalcontrol.OptimizationGUI'
+        connect:
+            optimization_logic: optimization
+            
+    # Add the main GUI to have a proper Qudi Manager window
+    manager_gui:
+        module.Class: 'manager.managergui.ManagerGui'
+        connect:
+            trace_analysis_logic: trac
