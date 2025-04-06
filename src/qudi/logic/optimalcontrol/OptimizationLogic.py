@@ -652,8 +652,9 @@ class OptimizationLogic(LogicBase):
     
     def _simulate_quocs_optimization(self, max_iterations, algorithm):
         """Simulate a QUOCS optimization process"""
-        # Simulate optimization process with improving pulses
-        for i in range(max_iterations):
+        try:
+            # Simulate optimization process with improving pulses
+            for i in range(max_iterations):
                 if not self._running:
                     self.message_label_signal.emit("Optimization stopped by user")
                     break
@@ -731,9 +732,13 @@ class OptimizationLogic(LogicBase):
                 })
                 
         except Exception as e:
-            self.log.error(f"Error during optimization: {str(e)}")
+            self.log.error(f"Error during simulation: {str(e)}")
             self.message_label_signal.emit(f"Error: {str(e)}")
         finally:
+            if not self._running:
+                self.log.info("Simulation stopped by user")
+            
+            # Always reset running state at the end
             self._running = False
             self.is_running_signal.emit(False)
 
