@@ -11,8 +11,8 @@ from PySide2.QtGui import QColor, QPalette
 import numpy as np
 from qudi.core.module import GuiBase
 from qudi.core.connector import Connector
-from qudi.util.widgets.plotting.plot_widget import PlotWidget
-from qudi.util.widgets.plotting.plot_item import PlotItem
+import pyqtgraph as pg
+from qudi.util.widgets.plotting.plot_widget import RubberbandZoomPlotWidget
 
 class OptimizationGUI(GuiBase, QMainWindow):
     """
@@ -133,9 +133,9 @@ class OptimizationGUI(GuiBase, QMainWindow):
         # Pulse visualization tab
         pulse_viz_widget = QWidget()
         pulse_viz_layout = QVBoxLayout()
-        self.pulse_plot = PlotWidget(show_toolbar=True)
-        self.pulse_plot.set_label('bottom', 'Time', 's')
-        self.pulse_plot.set_label('left', 'Amplitude', '')
+        self.pulse_plot = pg.PlotWidget()
+        self.pulse_plot.setLabel('bottom', 'Time', 's')
+        self.pulse_plot.setLabel('left', 'Amplitude', '')
         pulse_viz_layout.addWidget(self.pulse_plot)
         pulse_viz_widget.setLayout(pulse_viz_layout)
         result_tabs.addTab(pulse_viz_widget, "Pulse Visualization")
@@ -143,9 +143,9 @@ class OptimizationGUI(GuiBase, QMainWindow):
         # Convergence plot tab
         convergence_widget = QWidget()
         convergence_layout = QVBoxLayout()
-        self.convergence_plot = PlotWidget(show_toolbar=True)
-        self.convergence_plot.set_label('bottom', 'Iteration', '#')
-        self.convergence_plot.set_label('left', 'Figure of Merit', '')
+        self.convergence_plot = pg.PlotWidget()
+        self.convergence_plot.setLabel('bottom', 'Iteration', '#')
+        self.convergence_plot.setLabel('left', 'Figure of Merit', '')
         convergence_layout.addWidget(self.convergence_plot)
         convergence_widget.setLayout(convergence_layout)
         result_tabs.addTab(convergence_widget, "Convergence")
@@ -637,14 +637,14 @@ class OptimizationGUI(GuiBase, QMainWindow):
         # Add initial pulse shapes (flat lines at 0)
         for i in range(self.optimization_params['pulse_count']):
             color = self.pulse_colors[i % len(self.pulse_colors)]
-            pen = color.name()
+            pen = pg.mkPen(color=color)
             
             # Add a flat line at 0 for each pulse
             zeros = np.zeros_like(t)
             self.pulse_plot.plot(t, zeros, pen=pen, name=f"Pulse {i+1}")
         
         # Initialize convergence plot with a single data point at 0
-        self.convergence_plot.plot([0], [0], pen='r', symbol='o', symbolSize=5, name="FoM")
+        self.convergence_plot.plot([0], [0], pen=pg.mkPen('r'), symbolPen='r', symbol='o', symbolSize=5, name="FoM")
     
     def _on_stop_clicked(self):
         """Handle Stop button click."""
@@ -730,7 +730,7 @@ class OptimizationGUI(GuiBase, QMainWindow):
         
         for i, (pulse, tgrid) in enumerate(zip(pulses, timegrids)):
             color = self.pulse_colors[i % len(self.pulse_colors)]
-            pen = color.name()
+            pen = pg.mkPen(color=color)
             
             # Plot the pulse
             self.pulse_plot.plot(tgrid, pulse, pen=pen, name=f"Pulse {i+1}")
@@ -748,7 +748,7 @@ class OptimizationGUI(GuiBase, QMainWindow):
             List of figure of merit values for each iteration
         """
         self.convergence_plot.clear()
-        self.convergence_plot.plot(iterations, fom_values, pen='r', symbol='o', 
+        self.convergence_plot.plot(iterations, fom_values, pen=pg.mkPen('r'), symbolPen='r', symbol='o', 
                                   symbolSize=5, name="FoM")
         
         # Log the latest value
