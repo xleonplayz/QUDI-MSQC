@@ -1,77 +1,56 @@
 """
-This is the logic class for the optimization
+This is the logic class for the optimization - simplified version.
 """
-# QuOCS imports
-from quocslib.Optimizer import Optimizer
-from quocspyside2interface.logic.OptimizationBasic import OptimizationBasic
+import time
+import numpy as np
+from PySide2.QtCore import Signal
 
-# Qudi core imports
-from qudi.logic.optimalcontrol.HandleExit import HandleExitLogic
 from qudi.core.module import LogicBase
 from qudi.core.connector import Connector
 from qudi.util.mutex import Mutex
 
-import time
-from qtpy import QtCore
-from qudi.logic.optimalcontrol.fom_signal import FomSignal
-
-class OptimizationLogic(LogicBase, OptimizationBasic):
-    """Logic module for optimization control"""
+class OptimizationLogic(LogicBase):
+    """Logic module for optimization control - simplified version"""
     # Define a proper _threaded attribute for the Logic module
     _threaded = True
 
     fom_logic = Connector(interface="WorkerFom")
     controls_logic = Connector(interface="WorkerControls")
+    
     # Define all signals
-    load_optimization_dictionary_signal = QtCore.Signal(dict)
-    send_controls_signal = QtCore.Signal(list, list, list)
-    wait_fom_signal = QtCore.Signal(str)
-    is_running_signal = QtCore.Signal(bool)
-    message_label_signal = QtCore.Signal(str)
-    fom_plot_signal = QtCore.Signal(object)
-    controls_update_signal = QtCore.Signal(object)
-
-
+    load_optimization_dictionary_signal = Signal(dict)
+    send_controls_signal = Signal(list, list, list)
+    wait_fom_signal = Signal(str)
+    is_running_signal = Signal(bool)
+    message_label_signal = Signal(str)
+    fom_plot_signal = Signal(object)
+    controls_update_signal = Signal(object)
 
     def __init__(self, config=None, **kwargs):
         """Initialize the base class"""
         super().__init__(config=config, **kwargs)
 
         self.opti_comm_dict = {}
-        # Overwrite the previous handle exit variable
-        self.handle_exit_obj = HandleExitLogic()
         self.is_fom_computed = False
         self.fom_max = 10 ** 10
         self.fom = 10**10
         self.std = 0.0
         self.status_code = 0
-        # self._mutex = QtCore.QMutex()
         self._threadlock = Mutex()
-        self._running = True
+        self._running = False
         self.optimization_obj = None
-        return
 
     def on_activate(self):
         """ Activation """
         self.log.info("Starting the Optimization Logic")
-        # Creation of the figure of merit class to be use in the optimization dictionary to allow the transmissions
-        # between the figure of merit logic and optimization logic
+        
+        # Connect signals between components
         self.send_controls_signal.connect(self.controls_logic().update_controls)
-        # Very important here: Use the Direct Connection instead the default one, otherwise the signal will never reach
-        # the slot
-        self.fom_logic().send_fom_signal.connect(self.update_FoM, type=QtCore.Qt.DirectConnection)
-        self.fom_obj = FomSignal(self.get_FoM)
-        # Handle exit signals
-        self.handle_exit_obj.is_optimization_running_fom_signal.connect(
-            self.fom_logic().update_optimization_status)
-        self.handle_exit_obj.is_optimization_running_controls_signal.connect(
-            self.controls_logic().update_optimization_status
-        )
+        self.fom_logic().send_fom_signal.connect(self.update_FoM)
         self.wait_fom_signal.connect(self.fom_logic().wait_for_fom)
-        self.is_running_signal.connect(self.handle_exit_obj.set_is_user_running)
-        # Set the timer part
-        self.timer = QtCore.QTimer()
-        self.timer.setSingleShot(True)
+        
+        # Notify that we're ready
+        self.message_label_signal.emit("Optimization logic activated and ready")
 
     def update_FoM(self, fom_dict):
         """ Update the figure of merit from the fom logic """
@@ -79,6 +58,13 @@ class OptimizationLogic(LogicBase, OptimizationBasic):
         self.std = fom_dict.setdefault("std", 0.0)
         self.fom = fom_dict["FoM"]
         self.is_fom_computed = True
+        
+        # Emit signal to update plot
+        self.fom_plot_signal.emit({
+            "fom": self.fom,
+            "std": self.std,
+            "status": self.status_code
+        })
 
     def is_computed(self):
         """ Check if the figure of is updated """
@@ -86,18 +72,29 @@ class OptimizationLogic(LogicBase, OptimizationBasic):
 
     def get_FoM(self, pulses, parameters, timegrids):
         """ Send the controls to the worker controls and wait the figure of merit from the worker fom """
-        # Send the control to the worker controls
-        if self.handle_exit_obj.is_user_running:
-            self.send_controls(pulses, parameters, timegrids)
-        else:
+        # Only process if we're running
+        if not self._running:
             return {"FoM": self.fom_max, "status_code": -1}
-        # Send a signal to enable the waiting of the figure of merit
+            
+        # Send the controls
+        self.send_controls(pulses, parameters, timegrids)
+        
+        # Wait for FoM calculation
         self.wait_fom_signal.emit("Start to wait for figure of merit")
+        
+        # Wait for computation to complete
+        timeout = 30.0  # seconds
+        start_time = time.time()
         while not self.is_computed():
             time.sleep(0.1)
-            if not self.handle_exit_obj.is_user_running:
-                time.sleep(5.0)
+            if time.time() - start_time > timeout:
+                self.log.warning(f"Timeout waiting for FoM computation after {timeout}s")
+                return {"FoM": self.fom_max, "status_code": -2}
+            
+            if not self._running:
                 return {"FoM": self.fom_max, "status_code": -1}
+                
+        # Reset computation flag and return results
         self.is_fom_computed = False
         return {"FoM": self.fom, "std": self.std, "status_code": self.status_code}
 
@@ -105,52 +102,67 @@ class OptimizationLogic(LogicBase, OptimizationBasic):
         """ Load the opti communication dictionary and send it to the GUI """
         self.opti_comm_dict = opti_comm_dict
         self.load_optimization_dictionary_signal.emit(opti_comm_dict)
+        self.log.info(f"Loaded optimization dictionary with {len(opti_comm_dict)} entries")
 
-    def start_optimization(self, opti_comm_dict):
-        if self.optimization_obj is not None:
-            del self.optimization_obj
-        if self.handle_exit_obj.is_user_running:
-            self.log.warning("An optimization is still running. I will wait 5 seconds and then try to abort it")
-            time.sleep(5.0)
+    def start_optimization(self, opti_comm_dict=None):
+        """Start a simplified optimization process"""
+        if self._running:
+            self.log.warning("An optimization is already running")
+            return
+            
+        self._running = True
+        self.is_running_signal.emit(True)
+        self.message_label_signal.emit("Starting optimization process")
+        
+        if opti_comm_dict is not None:
+            self.load_opti_comm_dict(opti_comm_dict)
+        
+        # In a real implementation, this would start the actual optimization
+        # For this simplified version, we'll just simulate some basic behavior
+        try:
+            # Simulate optimization with random pulses
+            for i in range(5):
+                if not self._running:
+                    break
+                    
+                # Generate random pulses as example
+                pulses = [np.random.random(10).tolist()]
+                params = [{"amplitude": np.random.random()}]
+                timegrids = [list(range(10))]
+                
+                # Send controls and get FoM
+                result = self.get_FoM(pulses, params, timegrids)
+                
+                # Log progress
+                self.message_label_signal.emit(f"Iteration {i+1}/5: FoM = {result['FoM']:.4f}")
+                time.sleep(1)  # Simulate processing time
+                
+            self.message_label_signal.emit("Optimization complete")
+            
+        except Exception as e:
+            self.log.error(f"Error during optimization: {str(e)}")
+            self.message_label_signal.emit(f"Error: {str(e)}")
+        finally:
+            self._running = False
             self.is_running_signal.emit(False)
 
-        # Activate the optimization logic, fom logic, and controls logic
-        self.is_running_signal.emit(True)
-        self.log.info("Waiting few seconds before the optimization starts")
-        time.sleep(5.0)
-
-        # Creation of the basic objects for the optimizer
-        optimization_dictionary = opti_comm_dict["optimization_dictionary"]
-
-        comm_signals_list = [self.message_label_signal,
-                             self.fom_plot_signal,
-                             self.controls_update_signal]
-
-        # Define Optimizer
-        optimization_obj = Optimizer(optimization_dictionary, self.fom_obj, 
-                                     comm_signals_list=comm_signals_list)
-
-        try:
-            optimization_obj.execute()
-        except Exception as ex:
-            self.log.error("Unhandled exception: {}".format(ex.args))
-            self.log.error("Something went wrong during the optimization process")
-
-
-        self.message_label_signal.emit("The optimization is finished")
-        # Send a signal to conclude the optimization
-        self.is_running_signal.emit(False)
-        # Save the optimizer obj for further analysis in the jupyter notebook
-        self.optimization_obj = optimization_obj
-        return
+    def stop_optimization(self):
+        """Stop the current optimization process"""
+        if self._running:
+            self._running = False
+            self.is_running_signal.emit(False)
+            self.message_label_signal.emit("Optimization stopped by user")
+            self.log.info("Optimization process stopped by user")
 
     def send_controls(self, pulses_list, parameters_list, timegrids_list):
         """ Send the controls to the worker controls """
         self.log.debug("Sending controls to the worker controls")
         self.send_controls_signal.emit(pulses_list, parameters_list, timegrids_list)
-        return
 
     def on_deactivate(self):
-        """ FUnction called during the deactivation """
-        # TODO Deactivate all the signals here
-        self.log.info("Close the Optimization logic")
+        """ Function called during the deactivation """
+        # Stop any running optimization
+        if self._running:
+            self.stop_optimization()
+        
+        self.log.info("Closing the Optimization logic")

@@ -30,4 +30,3 @@ class FomSignal:
         """
         # Use the attribute of optimization logic class
         self.get_FoM = get_fom
-
