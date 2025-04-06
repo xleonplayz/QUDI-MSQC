@@ -1,0 +1,76 @@
+# =============================================================================
+# Example Qudi configuration file (aktuelle Struktur, erweitert um OptimalControl).
+# =============================================================================
+
+global:
+  # Standard: Welche Module sollen beim Start direkt geladen werden?
+  startup_modules: 
+    - tray            # System Tray-Icon
+    - man             # Manager GUI
+    - optimalcontrol  # Das Optimalcontrol-GUI (QuOCS)
+
+  # Server-Konfiguration (für Remote-Aufrufe, z.B. Jupyter-Notebook)
+  remote_modules_server:
+    address: 'localhost'
+    port: 12346
+
+  # Server-Port für lokales Serving der Modul-Namespace, notwendig für Jupyter-Kernel:
+  namespace_server_port: 18862
+
+  # Wenn True, werden Remote-Methodenaufrufe serialisiert und de-serialisiert (hilfreich bei numpy)
+  force_remote_calls_by_value: True
+
+  # Qss-Stylesheet für das GUI-Design
+  stylesheet: 'qdark.qss'
+
+  # Datenverzeichnis (optional) – daily_data_dirs: True => Tägliche Unterordner
+  daily_data_dirs: True
+
+
+# =============================================================================
+# GUI-Abschnitt
+# =============================================================================
+gui:
+  # --------------------------------
+  # Manager GUI
+  # --------------------------------
+  man:
+    module.Class: 'core.gui.main_gui.main_gui.MainGui'
+
+  # --------------------------------
+  # System Tray-Icon
+  # --------------------------------
+  tray:
+    module.Class: 'core.gui.main_gui.main_gui.TrayIcon'
+
+  # --------------------------------
+  # Optimal Control GUI
+  # --------------------------------
+  optimalcontrol:
+    module.Class: 'gui.optimalcontrol.OptimizationGUI'
+    connect:
+      optimization_logic: 'optimizationlogic'
+
+
+# =============================================================================
+# LOGIC-Abschnitt
+# =============================================================================
+logic:
+  # --------------------------------
+  # Optimal Control Logic
+  # --------------------------------
+  optimizationlogic:
+    module.Class: 'logic.optimalcontrol.OptimizationLogic'
+    connect:
+      fom_logic: 'fomlogic'
+      controls_logic: 'controlslogic'
+
+  fomlogic:
+    module.Class: 'logic.optimalcontrol.worker_fom'
+    options:
+      max_time: 30.0
+
+  controlslogic:
+    module.Class: 'logic.optimalcontrol.worker_controls'
+    options:
+      max_time: 30.0
