@@ -23,10 +23,10 @@ class OptimizationGUI(GuiBase, QMainWindow):
     # Define connectors to the Logic modules
     optimization_logic = Connector(interface="OptimizationLogic")
 
-    # Define signals
-    optimization_started_signal = Signal()
-    optimization_stopped_signal = Signal()
-    optimization_params_changed_signal = Signal(dict)
+    # Define signals - all signals should be defined OUTSIDE the constructor to avoid nullptr issues
+    # Using string signals instead of custom signals to avoid PyQt/PySide issues
+    optimization_status_update = Signal(bool)  # True=started, False=stopped
+    parameter_updated = Signal(object)  # Parameters dictionary
     
     def __init__(self, config=None, **kwargs):
         # Initialize the parent classes with a single super() call
@@ -495,8 +495,7 @@ class OptimizationGUI(GuiBase, QMainWindow):
         self.load_button.clicked.connect(self._on_load_clicked)
         
         # Connect internal state change signals
-        self.optimization_started_signal.connect(self._on_optimization_started)
-        self.optimization_stopped_signal.connect(self._on_optimization_stopped)
+        self.optimization_status_update.connect(self._on_optimization_status_changed)
         
         # Algorithm selection change
         self.algorithm_combo.currentTextChanged.connect(self.update_advanced_options)
@@ -587,8 +586,11 @@ class OptimizationGUI(GuiBase, QMainWindow):
             
             # Emit signal for logic module if we have a logic instance
             if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
-                self.optimization_params_changed_signal.emit(self.optimization_params)
-                self.log_message(f"Updated parameters: algorithm={params['algorithm']}, iterations={params['iterations']}")
+                try:
+                    self.parameter_updated.emit(self.optimization_params)
+                    self.log_message(f"Updated parameters: algorithm={params['algorithm']}, iterations={params['iterations']}")
+                except Exception as e:
+                    self.log_message(f"Error sending parameters update: {str(e)}")
             else:
                 self.log_message("Parameter update complete (logic module not connected)")
                 
@@ -646,19 +648,19 @@ class OptimizationGUI(GuiBase, QMainWindow):
                 # Continue anyway as this is non-critical
             
             # Signal optimization start (updates UI)
-            self.optimization_started_signal.emit()
+            self.optimization_status_update.emit(True)
             
             # Start the optimization in the logic module
             if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
                 self.optimizationlogic.start_optimization(self.optimization_params)
             else:
                 self.log_message("Error: Optimization logic not available")
-                self.optimization_stopped_signal.emit()
+                self.optimization_status_update.emit(False)
                 
         except Exception as e:
             self.log_message(f"Error starting optimization: {str(e)}")
             # Make sure UI is reset
-            self.optimization_stopped_signal.emit()
+            self.optimization_status_update.emit(False)
     
     def _initialize_plots(self):
         """Initialize the visualization plots with empty data."""
@@ -685,30 +687,44 @@ class OptimizationGUI(GuiBase, QMainWindow):
     def _on_stop_clicked(self):
         """Handle Stop button click."""
         self.log_message("Stopping optimization process...")
-        # In a real implementation, we would signal the optimization logic to stop
-        self.optimization_stopped_signal.emit()
-    
-    def _on_optimization_started(self):
-        """Update UI state when optimization starts."""
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        self.save_button.setEnabled(False)
-        self.load_button.setEnabled(False)
-        self.status_value.setText("Running")
+        # Update UI
+        self.optimization_status_update.emit(False)
         
-        # Disable parameter input while optimization is running
-        self._set_inputs_enabled(False)
+        # If connected to logic, tell it to stop as well
+        if hasattr(self, 'optimizationlogic') and self.optimizationlogic is not None:
+            try:
+                self.optimizationlogic.stop_optimization()
+            except Exception as e:
+                self.log_message(f"Error stopping optimization: {str(e)}")
     
-    def _on_optimization_stopped(self):
-        """Update UI state when optimization stops."""
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.save_button.setEnabled(True)
-        self.load_button.setEnabled(True)
-        self.status_value.setText("Ready")
+    def _on_optimization_status_changed(self, is_running):
+        """Update UI state when optimization status changes.
         
-        # Re-enable parameter input
-        self._set_inputs_enabled(True)
+        Parameters
+        ----------
+        is_running : bool
+            Whether the optimization is running or not
+        """
+        if is_running:
+            # Optimization started
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            self.save_button.setEnabled(False)
+            self.load_button.setEnabled(False)
+            self.status_value.setText("Running")
+            
+            # Disable parameter input while optimization is running
+            self._set_inputs_enabled(False)
+        else:
+            # Optimization stopped
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            self.save_button.setEnabled(True)
+            self.load_button.setEnabled(True)
+            self.status_value.setText("Ready")
+            
+            # Re-enable parameter input
+            self._set_inputs_enabled(True)
     
     def _set_inputs_enabled(self, enabled):
         """Enable or disable all parameter input widgets."""
@@ -935,52 +951,70 @@ class OptimizationGUI(GuiBase, QMainWindow):
     def on_activate(self):
         """Module activation in Qudi."""
         # Get connected logic module
-        self.optimizationlogic = self.optimization_logic()
-        
         try:
-            # Connect signals if the logic module provides them
-            self.optimizationlogic.load_optimization_dictionary_signal.connect(
-                self.update_optimization_dictionary
-            )
+            self.optimizationlogic = self.optimization_logic()
             
-            # Connect more signals if available
-            if hasattr(self.optimizationlogic, 'controls_update_signal'):
-                self.optimizationlogic.controls_update_signal.connect(
-                    self._handle_controls_update
-                )
+            # Connect signals if the logic module provides them - use try/except for each signal
+            try:
+                if hasattr(self.optimizationlogic, 'load_optimization_dictionary_signal'):
+                    self.optimizationlogic.load_optimization_dictionary_signal.connect(
+                        self.update_optimization_dictionary
+                    )
+            except Exception as e:
+                self.log_message(f"Could not connect dictionary signal: {str(e)}")
                 
-            if hasattr(self.optimizationlogic, 'fom_plot_signal'):
-                self.optimizationlogic.fom_plot_signal.connect(
-                    self._handle_fom_update
-                )
+            try:
+                if hasattr(self.optimizationlogic, 'controls_update_signal'):
+                    self.optimizationlogic.controls_update_signal.connect(
+                        self._handle_controls_update
+                    )
+            except Exception as e:
+                self.log_message(f"Could not connect controls signal: {str(e)}")
                 
-            if hasattr(self.optimizationlogic, 'message_label_signal'):
-                self.optimizationlogic.message_label_signal.connect(
-                    self.log_message
-                )
+            try:
+                if hasattr(self.optimizationlogic, 'fom_plot_signal'):
+                    self.optimizationlogic.fom_plot_signal.connect(
+                        self._handle_fom_update
+                    )
+            except Exception as e:
+                self.log_message(f"Could not connect FoM signal: {str(e)}")
                 
-            if hasattr(self.optimizationlogic, 'is_running_signal'):
-                self.optimizationlogic.is_running_signal.connect(
-                    self._handle_running_state_change
-                )
+            try:
+                if hasattr(self.optimizationlogic, 'message_label_signal'):
+                    self.optimizationlogic.message_label_signal.connect(
+                        self.log_message
+                    )
+            except Exception as e:
+                self.log_message(f"Could not connect message signal: {str(e)}")
                 
-            if hasattr(self.optimizationlogic, 'optimization_status_signal'):
-                self.optimizationlogic.optimization_status_signal.connect(
-                    self.update_optimization_status
-                )
+            try:
+                if hasattr(self.optimizationlogic, 'is_running_signal'):
+                    self.optimizationlogic.is_running_signal.connect(
+                        self.optimization_status_update.emit
+                    )
+            except Exception as e:
+                self.log_message(f"Could not connect running signal: {str(e)}")
+                
+            try:
+                if hasattr(self.optimizationlogic, 'optimization_status_signal'):
+                    self.optimizationlogic.optimization_status_signal.connect(
+                        self.update_optimization_status
+                    )
+            except Exception as e:
+                self.log_message(f"Could not connect status signal: {str(e)}")
             
-            # Connect our signals to the logic
-            self.optimization_params_changed_signal.connect(
-                self.optimizationlogic.load_opti_comm_dict
-            )
-            
-            # Use our own stop method which then calls logic's stop method
-            # Do not disconnect the old one since it handles UI updates
-            self.stop_button.clicked.connect(self._on_stop_with_logic)
+            # Connect our signals to the logic - careful with potentially problematic signals
+            try:
+                if hasattr(self.optimizationlogic, 'load_opti_comm_dict'):
+                    self.parameter_updated.connect(
+                        self.optimizationlogic.load_opti_comm_dict
+                    )
+            except Exception as e:
+                self.log_message(f"Could not connect parameter signal: {str(e)}")
             
             self.log_message("Successfully connected to optimization logic")
         except Exception as e:
-            self.log_message(f"Warning: Could not connect all signals: {str(e)}")
+            self.log_message(f"Warning: Could not connect to logic: {str(e)}")
         
         # Initialize UI elements
         self.handle_ui_elements()
@@ -1020,29 +1054,6 @@ class OptimizationGUI(GuiBase, QMainWindow):
         except Exception as e:
             self.log_message(f"Error updating convergence plot: {str(e)}")
             
-    def _handle_running_state_change(self, is_running):
-        """Safely handle running state change
-        
-        Parameters
-        ----------
-        is_running : bool
-            Whether optimization is running
-        """
-        try:
-            if is_running:
-                self.optimization_started_signal.emit()
-            else:
-                self.optimization_stopped_signal.emit()
-        except Exception as e:
-            self.log_message(f"Error handling state change: {str(e)}")
-            
-    def _on_stop_with_logic(self):
-        """Handle stop button with logic connection"""
-        try:
-            self._on_stop_clicked()  # Call our UI update method
-            self.optimizationlogic.stop_optimization()  # Call logic's stop method
-        except Exception as e:
-            self.log_message(f"Error stopping optimization: {str(e)}")
     
     def _on_save_clicked_with_logic(self):
         """Handle Save button click using the logic's save method."""
